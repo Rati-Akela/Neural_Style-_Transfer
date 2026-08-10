@@ -1,1 +1,1 @@
-# ai-nst-project
+# ai-neural-style-transfer-project
