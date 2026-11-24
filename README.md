@@ -1,184 +1,154 @@
-# AI Neural Style Transfer
+# Neural Style Transfer (AdaIN)
 
-An AI-powered image transformation application that combines the **content of one image with the artistic style of another image** using deep learning-based Neural Style Transfer.
+[![CI](https://github.com/Rati-Akela/Neural_Style-_Transfer/actions/workflows/ci.yml/badge.svg)](https://github.com/Rati-Akela/Neural_Style-_Transfer/actions/workflows/ci.yml)
+![Python](https://img.shields.io/badge/python-3.11%20|%203.12%20|%203.13-blue)
+![License](https://img.shields.io/badge/license-MIT-green)
 
-## Overview
+Repaint any photo in the style of any artwork, **in a single forward pass**. This project implements *arbitrary* style transfer with **Adaptive Instance Normalization (AdaIN)** (Huang & Belongie, ICCV 2017): one trained network handles every style image, including ones it has never seen, in about two seconds on a plain CPU.
 
-**AI Neural Style Transfer** uses deep learning to transform ordinary images into artistic compositions by separating an image's **content** from its **visual style**.
+**Live demo:** _add your deployed URL here_
 
-For example, a photograph can be transformed into an artwork inspired by styles such as **sketch, painting, or Ghibli-inspired aesthetics** while preserving the main structure and content of the original image.
+![The app](docs/app.png)
 
-The project demonstrates the application of **Convolutional Neural Networks (CNNs), feature extraction, image processing, and deep learning optimization** for creative AI applications.
+![Gallery: two photos in three styles](docs/gallery.jpg)
 
-## Key Features
+## Features
 
-* **AI-Powered Image Transformation** – Converts input images into artistic outputs.
-* **Content Preservation** – Maintains the important structures and objects from the original image.
-* **Style Transfer** – Applies the visual characteristics of a selected style image.
-* **Multiple Artistic Styles** – Supports styles such as sketch, painting, and Ghibli-inspired transformations.
-* **Deep Learning-Based Processing** – Uses CNN feature representations to understand image content and style.
-* **Interactive Interface** – Allows users to upload images and generate stylized outputs.
-* **Output Preview** – Displays the transformed image for easy comparison.
+- **Any photo, any style.** Pick example images or upload your own (JPG, PNG, WebP).
+- **Style strength.** Slide from your original photo (0) to full stylisation (1). Because AdaIN works in feature space, the in-between values interpolate smoothly.
+- **Brushstroke scale.** Resize the style before encoding for finer detail or bolder strokes.
+- **Blend two styles.** Mix two artworks with a single slider.
+- **Keep original colours.** Apply the style's texture while keeping the photo's colours (luminance-only transfer).
+- **Download** the result as PNG, or render a five-step strength sweep.
+- **Handles real-world photos.** EXIF rotation from phones is respected, transparency is flattened to white, grayscale and palette images work, and unreadable files give a clear error.
 
-## AI & Deep Learning Concepts
+| Style strength | Style blending | Keep colours |
+| --- | --- | --- |
+| ![strength](docs/strength.jpg) | ![blend](docs/blend.jpg) | ![colours](docs/colors.jpg) |
 
-The project applies:
+## How it works
 
-* Neural Style Transfer
-* Convolutional Neural Networks (CNNs)
-* Deep Learning
-* Feature Extraction
-* Content Representation
-* Style Representation
-* Image Processing
-* Optimization
-* Computer Vision
-
-## How Neural Style Transfer Works
-
-The system separates an image into two important components:
-
-```text
-Content Image
-     │
-     ├──────────────┐
-     │              │
-     ▼              ▼
-Content Features   Style Image
-     │              │
-     │              ▼
-     │         Style Features
-     │              │
-     └───────┬──────┘
-             ▼
-      Feature Optimization
-             │
-             ▼
-      Stylized Output
+```mermaid
+flowchart LR
+    C[Content photo] --> E1[VGG-19 encoder<br/>up to relu4_1]
+    S[Style image] --> E2[VGG-19 encoder<br/>same frozen weights]
+    E1 --> A[AdaIN<br/>match per-channel mean and std]
+    E2 --> A
+    A --> M[Blend with content features<br/>by style strength]
+    M --> D[Trained decoder]
+    D --> O[Stylised image]
 ```
 
-The model attempts to preserve the **content features** of the original image while reproducing the **style features** of the reference artwork.
+Both images are encoded by a frozen VGG-19. AdaIN then re-scales the photo's feature statistics to match the style's:
 
-## Tech Stack
-
-| Category           | Technologies               |
-| ------------------ | -------------------------- |
-| Language           | Python                     |
-| Deep Learning      | PyTorch / TensorFlow       |
-| Computer Vision    | OpenCV                     |
-| Image Processing   | PIL, NumPy                 |
-| Model Architecture | CNN / Pre-trained CNN      |
-| Interface          | Streamlit                  |
-| Development        | Jupyter Notebook / VS Code |
-| Version Control    | Git, GitHub                |
-
-## Workflow
-
-```text
-Upload Content Image
-        ↓
-Upload / Select Style Image
-        ↓
-Preprocess Images
-        ↓
-Extract Deep Features
-        ↓
-Calculate Content & Style Loss
-        ↓
-Optimize Generated Image
-        ↓
-Generate Stylized Image
-        ↓
-Display Result
+```
+AdaIN(x, y) = σ(y) · (x − μ(x)) / σ(x) + μ(y)
 ```
 
-## Project Structure
+where μ and σ are the per-channel mean and standard deviation. A decoder, the only part that is trained, turns the result back into an image. There is no per-image optimisation, which is what makes it real-time (the original optimisation-based method of Gatys et al. is orders of magnitude slower).
 
-```text
-AI-NEURAL-STYLE-TRANSFER/
-│
-├── app.py
-├── requirements.txt
-├── README.md
-│
-├── models/
-│   └── ...
-│
-├── styles/
-│   ├── sketch/
-│   ├── painting/
-│   └── ...
-│
-├── utils/
-│   ├── preprocessing.py
-│   └── style_transfer.py
-│
-├── outputs/
-│   └── ...
-│
-└── assets/
-    └── ...
-```
+Training minimises a **content loss** (the decoded image should re-encode to the AdaIN features) plus a **style loss** (its feature mean/std at relu1_1 to relu4_1 should match the style image's). See [`adain/train.py`](adain/train.py).
 
-> Update the structure to match the actual files in your repository.
+### Engineering notes
 
-## Installation
+- **Serving needs no PyTorch.** The encoder and decoder are exported to ONNX (`models/*.onnx`) and run with ONNX Runtime; AdaIN itself is a few lines of NumPy. The deployed app needs only four top-level requirements (Streamlit, ONNX Runtime, NumPy, Pillow) instead of multi-gigabyte PyTorch. A test checks that the ONNX output matches PyTorch to within 1e-4 on several image sizes (measured differences are about 5e-6), and CI runs the app tests in an environment with PyTorch uninstalled.
+- **Low-memory inference.** ONNX Runtime's memory arena is disabled, cutting peak RAM by roughly 40% for under 10% extra latency, so it fits small free hosting tiers.
+- **Dynamic image sizes.** The network downsamples 3×, so sizes are snapped to multiples of 8 and a 32 px minimum; otherwise the output size would not match the input.
+- **Style features are cached**, so re-rendering with a different strength, blend or colour setting only repeats AdaIN and the decoder.
 
-### 1. Clone the repository
+## Performance
 
-### 2. Create a virtual environment
+Measured with [`scripts/benchmark.py`](scripts/benchmark.py), one fresh process per size, on a 2-core x86_64 CPU (no GPU), Python 3.13:
+
+| Output size (longest edge) | Latency (median of 5) | Peak memory |
+| --- | --- | --- |
+| 256 px | 0.48 s | 164 MB |
+| 384 px | 1.04 s | 214 MB |
+| 512 px | 1.95 s | 291 MB |
+| 640 px | 3.29 s | 377 MB |
+| 768 px | 4.63 s | 489 MB |
+
+## Quick start
 
 ```bash
-python -m venv venv
-```
-
-Activate it on Windows:
-
-```powershell
-venv\Scripts\activate
-```
-
-### 3. Install dependencies
-
-```bash
+git clone https://github.com/Rati-Akela/Neural_Style-_Transfer.git
+cd Neural_Style-_Transfer
+python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-```
-
-### 4. Run the application
-
-If the project uses Streamlit:
-
-```bash
 streamlit run app.py
 ```
 
-## Applications
+Use it from Python:
 
-Neural Style Transfer can be used in:
+```python
+from PIL import Image
+from adain.engine import StyleTransfer
 
-* Digital art generation
-* Photo editing
-* Creative design
-* AI-assisted content creation
-* Image enhancement
-* Personalized artwork
-* Creative media applications
+engine = StyleTransfer()
+result = engine.stylize(
+    Image.open("photo.jpg"), Image.open("artwork.jpg"), size=512, alpha=0.8, keep_colors=False
+)
+result.save("stylized.png")
+```
 
-## Future Improvements
+## Training your own decoder
 
-* Add more artistic styles
-* Implement faster real-time style transfer
-* Support video style transfer
-* Add user-created style presets
-* Improve output resolution
-* Optimize GPU processing
-* Add batch image processing
-* Deploy the model as a cloud-based AI service
+```bash
+pip install -r requirements-train.txt
+python -m adain.train --content-dir data/content --style-dir data/style --epochs 10
+python -m adain.export onnx        # after copying your decoder to models/decoder_final.pth
+```
+
+`data/content` and `data/style` are folders of images; the paper uses MS-COCO photos and WikiArt paintings. Datasets are not included. Run `python -m adain.train --help` for all options. To rebuild the encoder file from the original VGG weights: `python -m adain.export trim vgg_normalised.pth`.
+
+## Tests
+
+```bash
+pip install -r requirements-dev.txt
+make lint test        # or: ruff check . && pytest
+```
+
+56 tests: AdaIN math (output statistics equal the style's, content-scale invariance, blending), image handling (EXIF, transparency, odd sizes), end-to-end inference with the real model, ONNX-vs-PyTorch parity, a real two-epoch training run, and headless UI tests of the Streamlit app.
+
+## Deploy
+
+**Streamlit Community Cloud (free):** push to GitHub, choose *Create app* at [share.streamlit.io](https://share.streamlit.io), set the main file to `app.py`, and under *Advanced settings* pick Python 3.12. No secrets are needed.
+
+**Docker:** `docker compose up --build`, then open http://localhost:8501.
+
+`NST_MAX_SIZE` (default `640`) sets the largest output size offered in the app. Memory grows roughly with the square of the size, so raise it only where you have the RAM.
+
+## Project structure
+
+```
+app.py                Streamlit app
+adain/
+  model.py            PyTorch encoder/decoder + AdaIN (training, export)
+  ops.py              NumPy AdaIN, blending, colour preservation, image helpers
+  engine.py           ONNX Runtime inference engine with caching
+  train.py, data.py   Training loop and dataset
+  export.py           Trim encoder weights, export ONNX
+models/               decoder_final.pth, encoder_relu4_1.pth, encoder.onnx, decoder.onnx
+examples/             Example photos and style images
+scripts/              Gallery generator, benchmark
+tests/                56 tests
+.github/workflows/    CI: lint + tests on Python 3.11-3.13, serving without torch, Docker build
+```
+
+## Limitations
+
+- AdaIN matches global feature statistics, so it excels at colour and texture but can distort fine structure such as faces and text, and it is not photo-realistic style transfer.
+- Large output sizes are slow on CPU and use more memory (see the table above).
+
+## Credits
+
+- **Method:** Xun Huang and Serge Belongie, [*Arbitrary Style Transfer in Real-time with Adaptive Instance Normalization*](https://arxiv.org/abs/1703.06868), ICCV 2017.
+- **Encoder weights:** the normalised VGG-19 weights come from the [naoto0804/pytorch-AdaIN](https://github.com/naoto0804/pytorch-AdaIN) release (converted from the original authors' Torch release).
+- **Example photos:** the cat and coffee photos are CC0 images from scikit-image's sample data.
+- **Example styles:** reproductions of paintings by Picasso and Mondrian, included for demonstration. Check the copyright status of any artwork before redistributing commercially.
 
 ## Author
 
-**Rati Kumari Akela**
+**Rati Kumari Akela**, Computer Science student interested in AI, machine learning and computer vision.
 
-Computer Science Engineering Student
-Interested in **Artificial Intelligence, Machine Learning, Deep Learning and Computer Vision**
-
+Licensed under the [MIT License](LICENSE).

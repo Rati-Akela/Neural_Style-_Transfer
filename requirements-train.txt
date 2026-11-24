@@ -1,0 +1,6 @@
+# Only for training / exporting the model.
+-r requirements.txt
+torch>=2.3
+torchvision>=0.18
+onnx>=1.16
+tqdm>=4.66

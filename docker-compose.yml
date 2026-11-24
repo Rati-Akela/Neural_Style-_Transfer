@@ -1,0 +1,7 @@
+services:
+  style-transfer:
+    build: .
+    ports:
+      - "8501:8501"
+    environment:
+      NST_MAX_SIZE: "768"   # raise/lower the largest selectable output size (memory grows ~size^2)
