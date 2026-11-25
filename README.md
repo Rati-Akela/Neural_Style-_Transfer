@@ -6,7 +6,7 @@
 
 Repaint any photo in the style of any artwork, **in a single forward pass**. This project implements *arbitrary* style transfer with **Adaptive Instance Normalization (AdaIN)** (Huang & Belongie, ICCV 2017): one trained network handles every style image, including ones it has never seen, in about two seconds on a plain CPU.
 
-**Live demo:** _add your deployed URL here_
+**Live demo:**  [neuralstyle-transfer.streamlit.app](https://neuralstyle-transfer.streamlit.app/)
 
 ![The app](docs/app.png)
 
